@@ -1,0 +1,20 @@
+# Ansible
+*.retry
+.vagrant/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

@@ -1,0 +1,97 @@
+---
+- name: Финальная проверка системы Lighthouse
+  hosts: localhost
+  become: true
+  gather_facts: true
+
+  vars:
+    clickhouse_server: "10.128.0.25"  # IP сервера ClickHouse
+    lighthouse_user: lighthouse
+    lighthouse_dir: /opt/lighthouse
+
+  tasks:
+    # Проверка сетевой доступности ClickHouse
+    - name: Проверка подключения к ClickHouse серверу
+      ansible.builtin.shell: |
+        timeout 5 nc -z {{ clickhouse_server }} 9000
+      register: clickhouse_network
+      changed_when: false
+      ignore_errors: yes
+
+    # Проверка конфигурационных файлов
+    - name: Проверка наличия конфигурации Lighthouse
+      ansible.builtin.stat:
+        path: "{{ lighthouse_dir }}/config.ini"
+      register: config_file
+
+    - name: Проверка наличия скрипта аудита
+      ansible.builtin.stat:
+        path: "{{ lighthouse_dir }}/lighthouse_audit_real.py"
+      register: script_file
+
+    # Проверка пользователя через команду id
+    - name: Проверка пользователя lighthouse
+      ansible.builtin.command: id {{ lighthouse_user }}
+      register: user_check
+      changed_when: false
+      ignore_errors: yes
+
+    # Проверка директорий
+    - name: Проверка рабочей директории
+      ansible.builtin.stat:
+        path: "{{ lighthouse_dir }}"
+      register: dir_check
+
+    # Тестовый запуск скрипта (только в реальном режиме, не в --check)
+    - name: Тестовый запуск скрипта аудита
+      ansible.builtin.shell: |
+        sudo -u {{ lighthouse_user }} {{ lighthouse_dir }}/venv/bin/python {{ lighthouse_dir }}/lighthouse_audit_real.py
+      register: script_test
+      changed_when: false
+      ignore_errors: yes
+      when: not ansible_check_mode
+
+    # Итоговый отчет
+    - name: Итоговый отчет о состоянии системы
+      ansible.builtin.debug:
+        msg: |
+          ====================================
+          СИСТЕМА LIGHTHOUSE - ФИНАЛЬНАЯ ПРОВЕРКА
+          ====================================
+          
+          СЕТЬ И ClickHouse:
+          - ClickHouse сервер ({{ clickhouse_server }}:9000): {{ 'ДОСТУПЕН ✓' if clickhouse_network.rc == 0 else 'НЕ ДОСТУПЕН ✗' }}
+          
+          ФАЙЛОВАЯ СИСТЕМА:
+          - Конфигурация (config.ini): {{ 'Найдена ✓' if config_file.stat.exists else 'Не найдена ✗' }}
+          - Скрипт аудита: {{ 'Найден ✓' if script_file.stat.exists else 'Не найден ✗' }}
+          - Пользователь '{{ lighthouse_user }}': {{ 'Существует ✓' if user_check.rc == 0 else 'Не существует ✗' }}
+          - Рабочая директория: {{ 'Существует ✓' if dir_check.stat.exists else 'Не существует ✗' }}
+          
+          ТЕСТ ВЫПОЛНЕНИЯ:
+          {% if ansible_check_mode %}
+          - Режим проверки: тест не выполнялся
+          {% else %}
+          - Скрипт аудита: {{ 'Выполнен успешно ✓' if script_test.rc == 0 else 'Ошибка при выполнении ✗' }}
+          {% if script_test.stdout %}
+          Вывод скрипта (первые 5 строк):
+          {{ script_test.stdout_lines[:5] | join('\n') }}
+          {% endif %}
+          {% endif %}
+          
+          ====================================
+          {% if clickhouse_network.rc == 0 and config_file.stat.exists and script_file.stat.exists and user_check.rc == 0 and dir_check.stat.exists %}
+          СИСТЕМА ГОТОВА К РАБОТЕ! ✓
+          {% else %}
+          ТРЕБУЕТСЯ ДОНАСТРОЙКА! ✗
+          {% endif %}
+          ====================================
+          
+          Команды для проверки:
+          1. Ручной запуск: sudo -u {{ lighthouse_user }} {{ lighthouse_dir }}/venv/bin/python {{ lighthouse_dir }}/lighthouse_audit_real.py
+          2. Просмотр логов: tail -f /var/log/lighthouse/audit.log
+          3. Проверка данных: ssh {{ clickhouse_server }} "clickhouse-client --query 'SELECT count() FROM lighthouse.reports'"
+          
+          Для автоматического запуска:
+          sudo crontab -u {{ lighthouse_user }} -e
+          Добавить: 0 3 * * * {{ lighthouse_dir }}/venv/bin/python {{ lighthouse_dir }}/lighthouse_audit_real.py

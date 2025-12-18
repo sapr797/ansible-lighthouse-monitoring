@@ -1,0 +1,46 @@
+---
+- name: Deploy Complete Lighthouse Monitoring System
+  hosts: lighthouse_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    # Переменные для ClickHouse
+    clickhouse_version: "25.11.2.24"
+    
+    # Переменные для Lighthouse
+    lighthouse_user: lighthouse
+    lighthouse_dir: /opt/lighthouse
+    clickhouse_host: "{{ groups['clickhouse_servers'][0] }}"
+    audit_sites:
+      - https://voronezh.poryadok.ru
+      - https://krasnodar.poryadok.ru
+      - https://poryadok.ru
+
+  pre_tasks:
+    - name: Check system connectivity
+      ping:
+
+  roles:
+    - role: lighthouse
+      vars:
+        lighthouse_user: "{{ lighthouse_user }}"
+        lighthouse_dir: "{{ lighthouse_dir }}"
+        audit_sites: "{{ audit_sites }}"
+        clickhouse_host: "{{ clickhouse_host }}"
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg: |
+          ====================================
+          LIGHTHOUSE MONITORING DEPLOYED
+          ====================================
+          Lighthouse server: {{ inventory_hostname }}
+          ClickHouse server: {{ clickhouse_host }}
+          Audit sites: {{ audit_sites | length }}
+          
+          Verification commands:
+          1. Run test: sudo -u {{ lighthouse_user }} {{ lighthouse_dir }}/venv/bin/python {{ lighthouse_dir }}/lighthouse_audit.py
+          2. Check logs: tail -f /var/log/lighthouse/audit.log
+          3. Verify data: ssh {{ clickhouse_host }} "clickhouse-client --query 'SELECT count() FROM lighthouse.reports'"

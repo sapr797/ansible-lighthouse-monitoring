@@ -1,0 +1,6 @@
+---
+vector_version: "0.28.0"
+clickhouse_host: localhost
+clickhouse_port: 8123
+clickhouse_user: default
+clickhouse_password: ""

@@ -1,0 +1,17 @@
+---
+# Ansible Galaxy requirements for Lighthouse Monitoring System
+
+# External role (included locally)
+- src: ./roles/clickhouse
+  name: clickhouse
+
+# Your custom roles from GitHub
+- src: https://github.com/sapr797/ansible-role-lighthouse.git
+  scm: git
+  version: "main"
+  name: lighthouse
+
+- src: https://github.com/sapr797/ansible-role-vector.git
+  scm: git
+  version: "main"
+  name: vector

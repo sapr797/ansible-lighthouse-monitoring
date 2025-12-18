@@ -1,0 +1,8 @@
+[lighthouse_servers]
+lighthous ansible_host=10.128.0.XX ansible_user=ubuntu
+
+[clickhouse_servers]
+clickhous ansible_host=10.128.0.25 ansible_user=ubuntu
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3

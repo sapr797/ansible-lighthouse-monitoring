@@ -1,0 +1,71 @@
+---
+- name: Статус системы Lighthouse
+  hosts: localhost
+  gather_facts: true  # Включаем сбор фактов для ansible_date_time
+
+  tasks:
+    - name: Проверка состояния системы
+      block:
+        - name: Проверка сети
+          shell: timeout 2 nc -z 10.128.0.25 9000 && echo "NETWORK_OK" || echo "NETWORK_FAIL"
+          register: network
+          changed_when: false
+          ignore_errors: yes
+        
+        - name: Проверка файлов
+          stat:
+            path: "{{ item }}"
+          register: files
+          loop:
+            - /opt/lighthouse/config.ini
+            - /opt/lighthouse/lighthouse_audit_real.py
+            - /var/log/lighthouse/audit.log
+        
+        - name: Проверка логов
+          shell: |
+            if [ -f /var/log/lighthouse/audit.log ]; then
+              tail -1 /var/log/lighthouse/audit.log | grep -q "Audit Completed" && echo "LOGS_OK" || echo "LOGS_OTHER"
+            else
+              echo "LOGS_MISSING"
+            fi
+          register: logs
+          changed_when: false
+          ignore_errors: yes
+        
+      rescue:
+        - name: Ошибка при проверке
+          debug:
+            msg: "Произошла ошибка при проверке системы"
+      
+      always:
+        - name: Финальный отчет
+          debug:
+            msg: |
+              ====================================
+              LIGHTHOUSE SYSTEM STATUS - {{ ansible_date_time.date if ansible_date_time is defined else "N/A" }}
+              ====================================
+              
+              Сеть (10.128.0.25:9000): {{ "✓ ДОСТУПЕН" if network is defined and "NETWORK_OK" in network.stdout else "✗ ОШИБКА" if network is defined else "⚠️ НЕ ПРОВЕРЕНО" }}
+              
+              Файлы:
+              - Конфиг: {{ "✓" if files is defined and files.results[0].stat.exists else "✗" if files is defined else "?" }}
+              - Скрипт: {{ "✓" if files is defined and files.results[1].stat.exists else "✗" if files is defined else "?" }}
+              - Логи: {{ "✓" if files is defined and files.results[2].stat.exists else "✗" if files is defined else "?" }}
+              
+              Состояние логов: {{ logs.stdout if logs is defined and logs.stdout else "НЕ ПРОВЕРЕНО" }}
+              
+              ====================================
+              РЕКОМЕНДАЦИИ:
+              ====================================
+              {% if network is defined and "NETWORK_OK" in network.stdout and files is defined and files.results[0].stat.exists and files.results[1].stat.exists %}
+              1. Система работает ✓
+              2. Для теста: sudo -u lighthouse /opt/lighthouse/venv/bin/python /opt/lighthouse/lighthouse_audit_real.py
+              3. Для мониторинга: tail -f /var/log/lighthouse/audit.log
+              {% else %}
+              1. Требуется диагностика системы
+              2. Проверьте: sudo systemctl status lighthouse
+              3. Проверьте логи: journalctl -u lighthouse
+              {% endif %}
+              
+              Проверка данных (на clickhous):
+              clickhouse-client --query "SELECT count() FROM lighthouse.reports"
