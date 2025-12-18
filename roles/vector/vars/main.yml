@@ -1,5 +1,0 @@
----
-# Константы
-vector_package_name: "vector"
-vector_config_dir: "/etc/vector"
-vector_service_name: "vector"
