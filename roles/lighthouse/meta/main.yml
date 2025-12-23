@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  author: sapr797
+  description: Ansible role for Lighthouse monitoring system
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - "20.04"
+        - "22.04"
+    - name: Debian
+      versions:
+        - "11"
+        - "12"
+  galaxy_tags:
+    - monitoring
+    - lighthouse
+    - auditing
+    - performance
+
+dependencies: []

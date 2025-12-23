@@ -1,0 +1,128 @@
+---
+- name: 🎯 Deploy Monitoring Stack (Fixed)
+  hosts: localhost
+  connection: local
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # Используйте доступную версию ClickHouse
+    clickhouse_version: "22.3"  # или другая доступная версия
+    clickhouse_port: 8123
+    lighthouse_port: 8080
+
+  pre_tasks:
+    - name: 🔍 Проверка доступных версий ClickHouse
+      apt:
+        update_cache: yes
+      tags: [setup]
+
+    - name: 📋 Поиск версий ClickHouse
+      shell: |
+        apt-cache search clickhouse-server | grep -o "clickhouse-server=[0-9.]*" | head -1 | cut -d'=' -f2 || echo "22.3"
+      register: available_version
+      changed_when: false
+      tags: [setup]
+
+  tasks:
+    - name: 🗄️ Установка ClickHouse (прямая установка)
+      apt:
+        name:
+          - clickhouse-server
+          - clickhouse-client
+        state: present
+        # Не указываем версию - установит доступную
+      register: install_clickhouse
+      tags: [clickhouse]
+
+    - name: ⏳ Запуск и включение ClickHouse
+      systemd:
+        name: clickhouse-server
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      when: install_clickhouse.changed
+      tags: [clickhouse]
+
+    - name: 🕐 Ожидание запуска ClickHouse
+      wait_for:
+        port: "{{ clickhouse_port }}"
+        delay: 5
+        timeout: 60
+      tags: [dependencies]
+
+    - name: 📊 Установка Vector (через роль)
+      include_role:
+        name: vector
+      vars:
+        vector_version: "0.28.0"
+      tags: [vector]
+
+    - name: 🎯 Установка Lighthouse (через роль)
+      include_role:
+        name: lighthouse
+      vars:
+        lighthouse_version: "v4.0.1"
+      tags: [lighthouse]
+
+    - name: 🌐 Настройка веб-доступа
+      block:
+        - name: Установка nginx
+          apt:
+            name: nginx
+            state: present
+
+        - name: Конфигурация nginx
+          copy:
+            dest: /etc/nginx/sites-available/lighthouse
+            content: |
+              server {
+                  listen 80;
+                  server_name _;
+                  location / {
+                      proxy_pass http://127.0.0.1:{{ lighthouse_port }};
+                      proxy_set_header Host $host;
+                  }
+              }
+
+        - name: Активация конфигурации
+          file:
+            src: /etc/nginx/sites-available/lighthouse
+            dest: /etc/nginx/sites-enabled/lighthouse
+            state: link
+
+        - name: Удаление дефолтного сайта
+          file:
+            path: /etc/nginx/sites-enabled/default
+            state: absent
+
+        - name: Перезапуск nginx
+          systemd:
+            name: nginx
+            state: restarted
+      tags: [web]
+
+  post_tasks:
+    - name: ✅ Финальная проверка
+      block:
+        - name: Проверка ClickHouse
+          shell: |
+            curl -s http://127.0.0.1:8123/ping 2>/dev/null || echo "NOT_FOUND"
+          register: clickhouse_check
+          changed_when: false
+
+        - name: Проверка Lighthouse
+          shell: |
+            curl -s -o /dev/null -w "%{http_code}" http://localhost:{{ lighthouse_port }}/ 2>/dev/null || echo "000"
+          register: lighthouse_check
+          changed_when: false
+
+        - name: Отчёт
+          debug:
+            msg: |
+              Результаты развёртывания:
+              - ClickHouse: {{ '✓' if clickhouse_check.stdout == 'Ok.' else '✗' }}
+              - Lighthouse: {{ '✓' if lighthouse_check.stdout == "200" else '✗' }}
+              - Веб-интерфейс: http://localhost:{{ lighthouse_port }}
+              - ClickHouse UI: http://localhost:8123
+      tags: [report]

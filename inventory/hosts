@@ -4,5 +4,9 @@ lighthous ansible_host=10.128.0.XX ansible_user=ubuntu
 [clickhouse_servers]
 clickhous ansible_host=10.128.0.25 ansible_user=ubuntu
 
+[monitoring:children]
+lighthouse_servers
+clickhouse_servers
+
 [all:vars]
 ansible_python_interpreter=/usr/bin/python3

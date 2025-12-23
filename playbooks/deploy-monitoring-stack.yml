@@ -1,0 +1,129 @@
+---
+- name: 🎯 Deploy Complete Monitoring Stack
+  hosts: localhost
+  connection: local
+  become: yes
+  gather_facts: yes
+
+  vars:
+    clickhouse_host: "clickhous"
+    clickhouse_port: 8123
+    lighthouse_port: 8080
+    web_port: 9090
+    audit_sites:
+      - "https://voronezh.poryadok.ru"
+      - "https://krasnodar.poryadok.ru"
+      - "https://poryadok.ru"
+
+  pre_tasks:
+    - name: 🔍 Проверка системных требований
+      assert:
+        that:
+          - ansible_os_family == "Debian"
+        fail_msg: "Требуется Ubuntu/Debian система"
+      tags: [validation]
+
+    - name: 📦 Обновление apt кэша
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: [setup]
+
+  roles:
+    - role: clickhouse
+      clickhouse_version: "22.8"
+      clickhouse_users:
+        - name: "lighthouse"
+          password: ""
+      tags: [database, clickhouse]
+
+  tasks:
+    - name: ⏳ Ожидание готовности ClickHouse
+      wait_for:
+        host: "127.0.0.1"
+        port: "{{ clickhouse_port }}"
+        timeout: 30
+      tags: [dependencies]
+
+  roles:
+    - role: vector
+      vector_version: "0.28.0"
+      tags: [logging, vector]
+
+  tasks:
+    - name: 🗃️ Создание базы данных для Lighthouse
+      uri:
+        url: "http://127.0.0.1:{{ clickhouse_port }}/"
+        method: POST
+        body: "CREATE DATABASE IF NOT EXISTS lighthouse_metrics"
+        status_code: 200
+      tags: [database, setup]
+
+  roles:
+    - role: lighthouse
+      lighthouse_version: "v4.0.1"
+      lighthouse_config:
+        clickhouse:
+          enabled: true
+          host: "{{ clickhouse_host }}"
+          port: "{{ clickhouse_port }}"
+      tags: [monitoring, lighthouse]
+
+  tasks:
+    - name: 🌐 Настройка веб-интерфейса
+      block:
+        - name: Установка nginx
+          apt:
+            name: nginx
+            state: present
+
+        - name: Конфигурация nginx для Lighthouse
+          copy:
+            dest: /etc/nginx/sites-available/lighthouse
+            content: |
+              server {
+                  listen 80;
+                  server_name _;
+                  location / {
+                      proxy_pass http://127.0.0.1:{{ lighthouse_port }};
+                      proxy_set_header Host $host;
+                  }
+              }
+
+        - name: Активация сайта
+          file:
+            src: /etc/nginx/sites-available/lighthouse
+            dest: /etc/nginx/sites-enabled/lighthouse
+            state: link
+
+        - name: Перезапуск nginx
+          systemd:
+            name: nginx
+            state: restarted
+      tags: [web, nginx]
+
+  post_tasks:
+    - name: ✅ Проверка работоспособности
+      block:
+        - name: Проверка ClickHouse
+          uri:
+            url: "http://127.0.0.1:{{ clickhouse_port }}/ping"
+            status_code: 200
+          register: chk_clickhouse
+
+        - name: Проверка Lighthouse
+          uri:
+            url: "http://localhost:{{ lighthouse_port }}/health"
+            status_code: 200
+            timeout: 10
+          register: chk_lighthouse
+          ignore_errors: yes
+
+        - name: Отчёт о состоянии
+          debug:
+            msg: |
+              Развёртывание завершено:
+              - ClickHouse: {{ '✓' if chk_clickhouse.status == 200 else '✗' }}
+              - Lighthouse: {{ '✓' if chk_lighthouse is defined and chk_lighthouse.status == 200 else '✗' }}
+              - Веб-интерфейс: http://localhost/
+      tags: [validation, report]

@@ -1,0 +1,97 @@
+---
+- name: Test Vector installation
+  hosts: localhost
+  connection: local
+  become: yes
+  
+  vars:
+    vector_version: "0.35.0"
+    clickhouse_host: "localhost"
+    clickhouse_port: 8123
+    clickhouse_database: "default"
+    clickhouse_metrics_table: "metrics"
+  
+  tasks:
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - wget
+          - tar
+          - gzip
+        state: present
+        update_cache: yes
+
+    - name: Download Vector binary
+      get_url:
+        url: "https://packages.timber.io/vector/{{ vector_version }}/vector-{{ vector_version }}-x86_64-unknown-linux-gnu.tar.gz"
+        dest: "/tmp/vector-{{ vector_version }}.tar.gz"
+        timeout: 60
+
+    - name: Create Vector directories
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - /opt/vector
+        - /etc/vector
+
+    - name: Extract Vector archive
+      unarchive:
+        src: "/tmp/vector-{{ vector_version }}.tar.gz"
+        dest: "/opt/vector"
+        remote_src: yes
+        creates: "/opt/vector/vector-{{ vector_version }}/bin/vector"
+
+    - name: Create symlink to Vector binary
+      file:
+        src: "/opt/vector/vector-{{ vector_version }}/bin/vector"
+        dest: "/usr/local/bin/vector"
+        state: link
+
+    - name: Create Vector config
+      copy:
+        dest: /etc/vector/vector.yaml
+        content: |
+          sources:
+            clickhouse_log:
+              type: file
+              include:
+                - /var/log/clickhouse-server/clickhouse-server.log
+              read_from: beginning
+
+          sinks:
+            clickhouse_metrics:
+              type: clickhouse
+              inputs:
+                - clickhouse_log
+              endpoint: http://{{ clickhouse_host }}:{{ clickhouse_port }}
+              database: {{ clickhouse_database }}
+              table: {{ clickhouse_metrics_table }}
+              skip_unknown_fields: true
+              compression: gzip
+
+    - name: Create systemd service for Vector
+      copy:
+        dest: /etc/systemd/system/vector.service
+        content: |
+          [Unit]
+          Description=Vector
+          Documentation=https://vector.dev
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/vector --config /etc/vector/vector.yaml
+          Restart=always
+          User=root
+          Group=root
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start Vector service
+      systemd:
+        name: vector
+        state: started
+        enabled: yes
+        daemon_reload: yes

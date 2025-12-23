@@ -1,0 +1,100 @@
+---
+- name: Fix Lighthouse and Vector deployment
+  hosts: localhost
+  connection: local
+  become: yes
+
+  tasks:
+    # 1. Fix Lighthouse web service
+    - name: Stop failing lighthouse service
+      systemd:
+        name: lighthouse
+        state: stopped
+        enabled: no
+
+    - name: Create working web service
+      copy:
+        dest: /etc/systemd/system/lighthouse-web.service
+        content: |
+          [Unit]
+          Description=Lighthouse Web Interface
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory=/opt/lighthouse
+          ExecStart=/usr/bin/python3 -m http.server 8080 --directory /opt/lighthouse
+          Restart=always
+          
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Start web service
+      systemd:
+        name: lighthouse-web
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    # 2. Configure Vector
+    - name: Create Vector config directory
+      file:
+        path: /etc/vector
+        state: directory
+
+    - name: Create Vector configuration
+      copy:
+        dest: /etc/vector/vector.yaml
+        content: |
+          sources:
+            lighthouse_logs:
+              type: file
+              include: ["/var/log/lighthouse/*.log"]
+          
+          sinks:
+            clickhouse:
+              type: clickhouse
+              inputs: ["lighthouse_logs"]
+              host: "127.0.0.1"
+              port: 8123
+              database: "lighthouse_metrics"
+              table: "audits"
+
+    - name: Create log directory
+      file:
+        path: /var/log/lighthouse
+        state: directory
+
+    - name: Start Vector service
+      systemd:
+        name: vector
+        state: started
+        enabled: yes
+
+    # 3. Create test data
+    - name: Create test audit log
+      copy:
+        dest: /var/log/lighthouse/test-audit.log
+        content: |
+          {"url":"https://voronezh.poryadok.ru","performance":0.85,"accessibility":0.90,"timestamp":"2025-12-23T07:00:00Z"}
+          {"url":"https://krasnodar.poryadok.ru","performance":0.78,"accessibility":0.82,"timestamp":"2025-12-23T07:01:00Z"}
+          {"url":"https://poryadok.ru","performance":0.92,"accessibility":0.88,"timestamp":"2025-12-23T07:02:00Z"}
+
+    # 4. Verify everything
+    - name: Verify services
+      shell: |
+        echo "=== Service Status ==="
+        systemctl is-active lighthouse-web && echo "lighthouse-web: ACTIVE" || echo "lighthouse-web: INACTIVE"
+        systemctl is-active vector && echo "vector: ACTIVE" || echo "vector: INACTIVE"
+        echo "=== Web Interface ==="
+        curl -s -o /dev/null -w "HTTP: %{http_code}" http://localhost:8080/ || echo "UNREACHABLE"
+        echo ""
+        echo "=== ClickHouse Data ==="
+        clickhouse-client --query "SELECT COUNT() as record_count FROM lighthouse_metrics.audits"
+      register: verification
+      changed_when: false
+
+    - name: Show verification results
+      debug:
+        msg: "{{ verification.stdout }}"

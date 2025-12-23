@@ -1,0 +1,159 @@
+---
+- name: 🚀 Deploy with Correct Vector Installation
+  hosts: localhost
+  connection: local
+  become: yes
+
+  vars:
+    vector_version: "0.28.0"
+    lighthouse_port: 8080
+
+  tasks:
+    # 1. Проверка ClickHouse
+    - name: Проверка ClickHouse
+      uri:
+        url: "http://127.0.0.1:8123/ping"
+        status_code: 200
+        timeout: 5
+      register: clickhouse_check
+      ignore_errors: yes
+      tags: [clickhouse]
+
+    # 2. Установка Vector из правильного репозитория
+    - name: Добавление GPG ключа Timber.io (Vector)
+      apt_key:
+        url: "https://packages.timber.io/vector/gpg.3543DB2D0A2BC4B8.key"
+        state: present
+      tags: [vector]
+
+    - name: Добавление репозитория Vector
+      apt_repository:
+        repo: "deb https://packages.timber.io/vector/deb {{ ansible_distribution_release }} main"
+        state: present
+        filename: "vector"
+      tags: [vector]
+
+    - name: Обновление apt кэша
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: [vector]
+
+    - name: Установка Vector
+      apt:
+        name: "vector={{ vector_version }}"
+        state: present
+      tags: [vector]
+
+    # Альтернатива: Установка через .deb если репозиторий не работает
+    - name: Альтернативная установка Vector (.deb)
+      block:
+        - name: Скачивание Vector .deb
+          get_url:
+            url: "https://packages.timber.io/vector/{{ vector_version }}/vector-{{ vector_version }}-1.amd64.deb"
+            dest: "/tmp/vector-{{ vector_version }}.deb"
+            mode: '0644'
+
+        - name: Установка .deb пакета
+          apt:
+            deb: "/tmp/vector-{{ vector_version }}.deb"
+            state: present
+      when: false  # Сначала попробуем репозиторий
+      tags: [vector, alt]
+
+    # 3. Установка Lighthouse (простая версия)
+    - name: Установка Lighthouse
+      block:
+        - name: Создание директории
+          file:
+            path: /opt/lighthouse
+            state: directory
+
+        - name: Скачивание Lighthouse
+          get_url:
+            url: "https://github.com/sigp/lighthouse/releases/download/v4.0.1/lighthouse-v4.0.1-x86_64-unknown-linux-gnu.tar.gz"
+            dest: "/tmp/lighthouse-latest.tar.gz"
+
+        - name: Распаковка
+          unarchive:
+            src: "/tmp/lighthouse-latest.tar.gz"
+            dest: "/opt/lighthouse"
+            remote_src: yes
+
+        - name: Настройка прав
+          file:
+            path: "/opt/lighthouse/lighthouse"
+            mode: '0755'
+            owner: root
+            group: root
+
+        - name: Создание конфигурации
+          copy:
+            dest: "/opt/lighthouse/config.toml"
+            content: |
+              [api]
+              address = "0.0.0.0"
+              port = {{ lighthouse_port }}
+              
+              [clickhouse]
+              enabled = true
+              host = "localhost"
+              port = 8123
+              database = "lighthouse_metrics"
+
+        - name: Создание systemd службы
+          copy:
+            dest: "/etc/systemd/system/lighthouse.service"
+            content: |
+              [Unit]
+              Description=Lighthouse Monitoring Service
+              After=network.target
+              
+              [Service]
+              Type=simple
+              User=root
+              WorkingDirectory=/opt/lighthouse
+              ExecStart=/opt/lighthouse/lighthouse --config /opt/lighthouse/config.toml
+              Restart=on-failure
+              RestartSec=10
+              
+              [Install]
+              WantedBy=multi-user.target
+
+        - name: Запуск Lighthouse
+          systemd:
+            name: lighthouse
+            state: started
+            enabled: yes
+            daemon_reload: yes
+      tags: [lighthouse]
+
+    # 4. Проверка
+    - name: Проверка установки
+      block:
+        - name: Проверка Vector
+          command: vector --version
+          register: vector_version_check
+          ignore_errors: yes
+          changed_when: false
+
+        - name: Проверка Lighthouse
+          wait_for:
+            port: "{{ lighthouse_port }}"
+            timeout: 30
+          ignore_errors: yes
+
+        - name: Финальный отчёт
+          debug:
+            msg: |
+              Результаты установки:
+              - ClickHouse: {{ '✓ Работает' if clickhouse_check is defined and clickhouse_check.status == 200 else '✗ Ошибка' }}
+              - Vector: {{ '✓ Установлен' if vector_version_check is defined and vector_version_check.rc == 0 else '✗ Не установлен' }}
+              - Lighthouse: {{ '✓ Запущен' if lighthouse_port is defined else '✗ Ошибка' }}
+              
+              {{ 'Vector версия: ' + vector_version_check.stdout if vector_version_check is defined and vector_version_check.rc == 0 else 'Установите Vector вручную: sudo apt install vector' }}
+              
+              Endpoints:
+              - ClickHouse: http://localhost:8123
+              - Lighthouse: http://localhost:{{ lighthouse_port }}
+      tags: [report]

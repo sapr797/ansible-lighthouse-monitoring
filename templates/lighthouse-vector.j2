@@ -1,0 +1,22 @@
+sources:
+  lighthouse_audits:
+    type: "file"
+    include: ["/var/log/lighthouse/audit.log"]
+    read_from: "beginning"
+
+transforms:
+  parse_json:
+    type: "remap"
+    inputs: ["lighthouse_audits"]
+    source: |
+      . = parse_json!(.string)
+
+sinks:
+  clickhouse_output:
+    type: "clickhouse"
+    inputs: ["parse_json"]
+    host: "{{ clickhouse_host }}"
+    port: {{ clickhouse_port }}
+    database: "lighthouse_metrics"
+    table: "audits"
+    skip_unknown_fields: true

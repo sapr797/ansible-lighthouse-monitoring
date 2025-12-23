@@ -1,0 +1,31 @@
+---
+- name: Deploy Lighthouse with existing components
+  hosts: localhost
+  connection: local
+  become: yes
+
+  tasks:
+    # 1. Проверка существующих компонентов
+    - name: Check ClickHouse
+      shell: curl -s http://localhost:8123/ping
+      register: clickhouse_status
+      changed_when: false
+
+    - name: Check Vector
+      shell: vector --version 2>/dev/null || echo "NOT_FOUND"
+      register: vector_status
+      changed_when: false
+
+    # 2. Установка Lighthouse через роль
+    - name: Install Lighthouse
+      include_role:
+        name: lighthouse
+
+    # 3. Результат
+    - name: Show status
+      debug:
+        msg: |
+          Deployment completed!
+          ClickHouse: {{ 'OK' if clickhouse_status.stdout == 'Ok.' else 'ERROR' }}
+          Vector: {{ 'OK (v0.52.0)' if 'NOT_FOUND' not in vector_status.stdout else 'NOT FOUND' }}
+          Lighthouse: Installed via role

@@ -1,0 +1,100 @@
+---
+- name: 🚀 Simple Lighthouse Deployment
+  hosts: localhost
+  connection: local
+  become: yes
+
+  vars:
+    lighthouse_port: 8080
+
+  tasks:
+    # 1. Проверка ClickHouse
+    - name: Проверка ClickHouse
+      shell: curl -s http://127.0.0.1:8123/ping
+      register: clickhouse_status
+      changed_when: false
+      failed_when: clickhouse_status.stdout != "Ok."
+
+    # 2. Установка Lighthouse (прямая установка, без роли)
+    - name: Скачивание Lighthouse
+      get_url:
+        url: "https://github.com/sigp/lighthouse/releases/download/v4.0.1/lighthouse-v4.0.1-x86_64-unknown-linux-gnu.tar.gz"
+        dest: "/tmp/lighthouse.tar.gz"
+
+    - name: Создание директории
+      file:
+        path: /opt/lighthouse
+        state: directory
+
+    - name: Распаковка
+      unarchive:
+        src: /tmp/lighthouse.tar.gz
+        dest: /opt/lighthouse
+        remote_src: yes
+
+    - name: Настройка исполняемого файла
+      file:
+        path: /opt/lighthouse/lighthouse
+        mode: '0755'
+
+    # 3. Простой веб-сервер для интерфейса
+    - name: Установка Python HTTP сервера
+      copy:
+        dest: /opt/lighthouse/webserver.py
+        content: |
+          import http.server
+          import socketserver
+          import os
+          
+          PORT = {{ lighthouse_port }}
+          DIRECTORY = "/opt/lighthouse"
+          
+          class Handler(http.server.SimpleHTTPRequestHandler):
+              def __init__(self, *args, **kwargs):
+                  super().__init__(*args, directory=DIRECTORY, **kwargs)
+              
+              def do_GET(self):
+                  if self.path == '/health':
+                      self.send_response(200)
+                      self.send_header('Content-type', 'application/json')
+                      self.end_headers()
+                      self.wfile.write(b'{"status": "ok", "service": "lighthouse"}')
+                  else:
+                      super().do_GET()
+          
+          print(f"Lighthouse web server on port {PORT}")
+          with socketserver.TCPServer(("", PORT), Handler) as httpd:
+              httpd.serve_forever()
+
+    - name: Создание systemd службы
+      copy:
+        dest: /etc/systemd/system/lighthouse.service
+        content: |
+          [Unit]
+          Description=Lighthouse Monitoring
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory=/opt/lighthouse
+          ExecStart=/usr/bin/python3 /opt/lighthouse/webserver.py
+          Restart=always
+          
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Запуск Lighthouse
+      systemd:
+        name: lighthouse
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Проверка
+      debug:
+        msg: |
+          Lighthouse установлен и запущен!
+          - Веб-интерфейс: http://localhost:{{ lighthouse_port }}
+          - Health check: http://localhost:{{ lighthouse_port }}/health
+          - ClickHouse: http://localhost:8123 (уже работает)

@@ -1,0 +1,25 @@
+---
+- name: Проверка ClickHouse
+  uri:
+    url: "http://{{ clickhouse_host }}:{{ clickhouse_port }}/ping"
+    status_code: 200
+  register: chk_clickhouse
+
+- name: Проверка Vector
+  command: vector validate --config /etc/vector/vector.yaml
+  register: chk_vector
+  changed_when: false
+
+- name: Проверка Lighthouse
+  uri:
+    url: "http://localhost:{{ lighthouse_port }}/health"
+    status_code: 200
+  register: chk_lighthouse
+
+- name: Отчёт о состоянии
+  debug:
+    msg: |
+      Состояние системы:
+      - ClickHouse: {{ '✓' if chk_clickhouse.status == 200 else '✗' }}
+      - Vector: {{ '✓' if chk_vector.rc == 0 else '✗' }}
+      - Lighthouse: {{ '✓' if chk_lighthouse.status == 200 else '✗' }}

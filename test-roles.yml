@@ -1,0 +1,16 @@
+---
+- name: Test Vector role
+  hosts: localhost
+  connection: local
+  become: yes
+  
+  roles:
+    - vector
+
+- name: Test Lighthouse role
+  hosts: localhost
+  connection: local
+  become: yes
+  
+  roles:
+    - lighthouse

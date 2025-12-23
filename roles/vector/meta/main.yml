@@ -1,0 +1,18 @@
+galaxy_info:
+  author: sapr797
+  description: Ansible role for installing and configuring Vector for ClickHouse log aggregation
+  company: 
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+  galaxy_tags:
+    - monitoring
+    - logging
+    - vector
+    - clickhouse
+
+dependencies: []

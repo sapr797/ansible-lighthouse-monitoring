@@ -1,0 +1,31 @@
+---
+- name: Deploy ClickHouse monitoring stack
+  hosts: all
+  become: yes
+  vars:
+    clickhouse_version: "24.3"
+    clickhouse_install_method: "package"
+    
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      
+  roles:
+    - role: clickhouse
+      tags: clickhouse
+    
+    - role: vector
+      tags: vector
+      
+    - role: lighthouse
+      tags: lighthouse
+      
+  post_tasks:
+    - name: Display deployment info
+      debug:
+        msg:
+          - "ClickHouse deployed on http://{{ ansible_host }}:8123"
+          - "Vector deployed and configured for log aggregation"
+          - "Lighthouse UI available on http://{{ ansible_host }}"

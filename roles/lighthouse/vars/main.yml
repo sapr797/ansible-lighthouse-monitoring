@@ -1,0 +1,7 @@
+---
+# переменные для установки Lighthouse
+lighthouse_packages:
+  - nginx
+  - curl
+  - git---
+# vars file for ansible-role-lighthouse

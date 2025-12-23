@@ -1,72 +1,32 @@
+# deploy-roles.yml
 ---
-- name: Развертывание системы мониторинга с использованием ролей
+- name: Install all required Ansible roles
   hosts: localhost
-  become: true
-  gather_facts: true
+  connection: local
+  gather_facts: no
 
-  vars:
-    # Переменная для пропуска установки ClickHouse (т.к. он уже установлен)
-    clickhouse_skip_install: true
-    
-    # Переменные для Lighthouse
-    lighthouse_user: lighthouse
-    lighthouse_dir: /opt/lighthouse
-    audit_sites:
-      - https://voronezh.poryadok.ru
-      - https://krasnodar.poryadok.ru
-      - https://poryadok.ru
+  tasks:
+    - name: Create roles directory
+      file:
+        path: "{{ playbook_dir }}/roles"
+        state: directory
 
-  pre_tasks:
-    - name: Проверка доступности хоста
-      ansible.builtin.ping:
-    
-    - name: Проверка установленного ClickHouse
-      ansible.builtin.command: which clickhouse-client
-      register: clickhouse_check
-      changed_when: false
-      ignore_errors: yes
+    - name: Install roles from requirements.yml (with error handling)
+      ansible.builtin.command:
+        cmd: ansible-galaxy install -r requirements.yml -p roles/ --force --ignore-errors
+      register: install_result
+      changed_when: install_result.rc == 0
 
-    - name: Вывод информации о ClickHouse
-      ansible.builtin.debug:
-        msg: "ClickHouse установлен: {{ 'Да' if clickhouse_check.rc == 0 else 'Нет' }}"
+    - name: Check if roles were installed
+      stat:
+        path: "{{ playbook_dir }}/roles/{{ item }}"
+      loop:
+        - lighthouse
+        - vector
+        - clickhouse
+      register: roles_check
 
-  roles:
-    - role: clickhouse
-      tags: clickhouse
-    
-    - role: lighthouse
-      tags: lighthouse
-
-  post_tasks:
-    - name: Проверка работы ClickHouse
-      ansible.builtin.shell: |
-        clickhouse-client --query "SELECT version()"
-      register: clickhouse_test
-      changed_when: false
-      ignore_errors: yes
-
-    - name: Проверка созданных таблиц для Lighthouse
-      ansible.builtin.shell: |
-        clickhouse-client --query "SHOW TABLES FROM lighthouse"
-      register: lighthouse_tables
-      changed_when: false
-      ignore_errors: yes
-      when: clickhouse_test.rc == 0
-
-    - name: Вывод итоговой информации
-      ansible.builtin.debug:
-        msg: |
-          ====================================
-          Система мониторинга настроена
-          ====================================
-          ClickHouse: {{ clickhouse_test.stdout if clickhouse_test.rc == 0 else 'Ошибка при проверке' }}
-          Таблицы в БД lighthouse: {{ lighthouse_tables.stdout if lighthouse_tables is defined and lighthouse_tables.rc == 0 else 'Не удалось проверить' }}
-          
-          Директория Lighthouse: {{ lighthouse_dir }}
-          Пользователь: {{ lighthouse_user }}
-          
-          Для запуска аудита:
-          sudo -u {{ lighthouse_user }} systemctl start lighthouse
-          
-          Для проверки логов:
-          tail -f /var/log/lighthouse/audit.log
+    - name: Display installation status
+      debug:
+        msg: "{{ item.stat.exists | ternary(item.item + ': ✓ Installed', item.item + ': ✗ Missing') }}"
+      loop: "{{ roles_check.results }}"

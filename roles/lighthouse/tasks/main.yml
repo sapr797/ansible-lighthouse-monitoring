@@ -1,0 +1,53 @@
+---
+- name: Install dependencies
+  apt:
+    name:
+      - nginx
+      - curl
+      - wget
+    state: present
+    update_cache: yes
+
+- name: Create lighthouse directory
+  file:
+    path: /opt/lighthouse
+    state: directory
+
+- name: Download Lighthouse binary
+  get_url:
+    url: "https://github.com/VKCOM/lighthouse/releases/download/v{{ lighthouse_version }}/lighthouse-v{{ lighthouse_version }}.x86_64-unknown-linux-gnu.tar.gz"
+    dest: "/tmp/lighthouse.tar.gz"
+    timeout: 60
+
+- name: Extract Lighthouse
+  unarchive:
+    src: "/tmp/lighthouse.tar.gz"
+    dest: /opt/lighthouse
+    remote_src: yes
+    creates: /opt/lighthouse/lighthouse
+
+- name: Create lighthouse config
+  template:
+    src: lighthouse.conf.j2
+    dest: /opt/lighthouse/lighthouse.conf
+
+- name: Create nginx config for lighthouse
+  template:
+    src: nginx-lighthouse.conf.j2
+    dest: /etc/nginx/sites-available/lighthouse
+
+- name: Enable nginx site
+  file:
+    src: /etc/nginx/sites-available/lighthouse
+    dest: /etc/nginx/sites-enabled/lighthouse
+    state: link
+
+- name: Remove default nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Restart nginx
+  systemd:
+    name: nginx
+    state: restarted

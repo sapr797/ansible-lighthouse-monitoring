@@ -1,0 +1,157 @@
+---
+- name: 🚀 Deploy Monitoring Stack (Fixed for ClickHouse 25.12 and Vector)
+  hosts: localhost
+  connection: local
+  become: yes
+
+  vars:
+    clickhouse_port: 8123
+    lighthouse_port: 8080
+    vector_version: "0.28.0"
+
+  tasks:
+    # 1. Проверка ClickHouse (уже установлен)
+    - name: 🔍 Проверка работы ClickHouse
+      shell: |
+        curl -s http://127.0.0.1:8123/ping
+      register: clickhouse_check
+      changed_when: false
+      failed_when: clickhouse_check.stdout != "Ok."
+      tags: [clickhouse, validation]
+
+    # 2. Установка Vector (исправленная)
+    - name: 📊 Установка Vector из официального репозитория
+      block:
+        - name: Добавление GPG ключа Vector
+          apt_key:
+            url: "https://apt.datadoghq.com/DATADOG_APT_KEY_CURRENT.public"
+            state: present
+          when: ansible_os_family == "Debian"
+
+        - name: Добавление репозитория Vector
+          apt_repository:
+            repo: "deb https://apt.datadoghq.com/ stable 7"
+            state: present
+            filename: "datadog"
+          when: ansible_os_family == "Debian"
+
+        - name: Установка Vector
+          apt:
+            name: "datadog-agent={{ vector_version }}"
+            state: present
+            update_cache: yes
+          when: ansible_os_family == "Debian"
+      tags: [vector]
+
+    # Альтернатива: Установка Vector через .deb пакет
+    - name: 📦 Альтернативная установка Vector (через .deb)
+      block:
+        - name: Скачивание .deb пакета Vector
+          get_url:
+            url: "https://packages.timber.io/vector/{{ vector_version }}/vector-{{ vector_version }}-amd64.deb"
+            dest: "/tmp/vector-{{ vector_version }}.deb"
+            mode: '0644'
+
+        - name: Установка .deb пакета
+          apt:
+            deb: "/tmp/vector-{{ vector_version }}.deb"
+            state: present
+      when: false  # Поменяйте на true если нужен этот способ
+      tags: [vector]
+
+    # 3. Установка Lighthouse через роль
+    - name: 🎯 Установка Lighthouse
+      include_role:
+        name: lighthouse
+      vars:
+        lighthouse_version: "v4.0.1"
+      tags: [lighthouse]
+
+    # 4. Настройка веб-интерфейса
+    - name: 🌐 Настройка Nginx для Lighthouse
+      block:
+        - name: Установка nginx
+          apt:
+            name: nginx
+            state: present
+
+        - name: Конфигурация прокси
+          copy:
+            dest: /etc/nginx/sites-available/lighthouse
+            content: |
+              server {
+                  listen 80;
+                  server_name _;
+                  
+                  # Основной интерфейс Lighthouse
+                  location / {
+                      proxy_pass http://127.0.0.1:{{ lighthouse_port }};
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                  }
+                  
+                  # Health check
+                  location /health {
+                      add_header Content-Type application/json;
+                      return 200 '{"status": "ok", "services": ["clickhouse", "lighthouse"]}';
+                  }
+              }
+
+        - name: Активация конфигурации
+          file:
+            src: /etc/nginx/sites-available/lighthouse
+            dest: /etc/nginx/sites-enabled/lighthouse
+            state: link
+
+        - name: Отключение дефолтного сайта
+          file:
+            path: /etc/nginx/sites-enabled/default
+            state: absent
+
+        - name: Перезапуск nginx
+          systemd:
+            name: nginx
+            state: restarted
+      tags: [web, nginx]
+
+    # 5. Проверка результатов
+    - name: ✅ Финальная проверка
+      block:
+        - name: Проверка ClickHouse
+          shell: |
+            timeout 5 curl -s http://127.0.0.1:8123/ping || echo "ERROR"
+          register: chk_clickhouse
+          changed_when: false
+
+        - name: Проверка Vector
+          shell: |
+            which vector && vector --version || echo "VECTOR_NOT_FOUND"
+          register: chk_vector
+          changed_when: false
+
+        - name: Проверка Lighthouse
+          shell: |
+            timeout 5 curl -s -o /dev/null -w "%{http_code}" http://localhost:{{ lighthouse_port }}/ || echo "000"
+          register: chk_lighthouse
+          changed_when: false
+
+        - name: Отчёт о развёртывании
+          debug:
+            msg: |
+              🎉 Развёртывание завершено!
+              
+              Статус сервисов:
+              - ClickHouse {{ '✓' if 'Ok.' in chk_clickhouse.stdout else '✗' }} (v25.12.1)
+              - Vector {{ '✓' if 'VECTOR_NOT_FOUND' not in chk_vector.stdout else '✗' }}
+              - Lighthouse {{ '✓' if chk_lighthouse.stdout == "200" else '✗' }}
+              
+              Доступные интерфейсы:
+              {{ '- ClickHouse UI: http://localhost:8123' if 'Ok.' in chk_clickhouse.stdout else '' }}
+              {{ '- Lighthouse: http://localhost:' ~ lighthouse_port if chk_lighthouse.stdout == "200" else '' }}
+              {{ '- Веб-прокси: http://localhost/' if chk_lighthouse.stdout == "200" else '' }}
+              
+              Следующие шаги:
+              1. Настройте ClickHouse базу для Lighthouse
+              2. Конфигурируйте Vector для отправки логов в ClickHouse
+              3. Добавьте сайты для аудита
+      tags: [report, validation]

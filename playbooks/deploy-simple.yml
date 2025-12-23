@@ -1,0 +1,42 @@
+---
+- name: 🚀 Простое развёртывание Lighthouse стека
+  hosts: localhost
+  connection: local
+  become: yes
+
+  tasks:
+    - name: 📦 Установка ClickHouse через роль
+      include_role:
+        name: clickhouse
+      vars:
+        clickhouse_version: "22.8"
+
+    - name: ⏳ Ожидание запуска ClickHouse
+      wait_for:
+        port: 8123
+        delay: 5
+        timeout: 60
+
+    - name: 📊 Установка Vector через роль
+      include_role:
+        name: vector
+
+    - name: 🎯 Установка Lighthouse через роль
+      include_role:
+        name: lighthouse
+
+    - name: 🌐 Настройка веб-доступа
+      apt:
+        name: nginx
+        state: present
+      notify: restart nginx
+
+    - name: ✅ Проверка установки
+      debug:
+        msg: "Все компоненты установлены. Проверьте: http://localhost:8080"
+
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted

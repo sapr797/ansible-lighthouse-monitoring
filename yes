@@ -1,20 +1,14 @@
-
-# Lighthouse Monitoring System - Ansible Развёртывание
-
+itoring System - Ansible Развёртывание
 Полная система мониторинга для аудита производительности веб-сайтов с использованием Google Lighthouse и ClickHouse.
 
-## 📦 Состав системы
-
-| Компонент | Назначение | Репозиторий |
-|-----------|------------|-------------|
-| **ClickHouse** | Хранение результатов аудитов | [Локальная копия AlexeySetevoi/ansible-clickhouse](https://github.com/AlexeySetevoi/ansible-clickhouse) |
-| **Lighthouse** | Аудит производительности сайтов | [sapr797/ansible-role-lighthouse](https://github.com/sapr797/ansible-role-lighthouse) |
-| **Vector** | Сбор и пересылка логов | [sapr797/ansible-role-vector](https://github.com/sapr797/ansible-role-vector) |
-
-## 🚀 Быстрый старт
-
-### Клонирование репозитория
-```bash
+📦 Состав системы
+Компонент	Назначение	Репозиторий
+ClickHouse	Хранение результатов аудитов	Локальная копия AlexeySetevoi/ansible-clickhouse
+Lighthouse	Аудит производительности сайтов	sapr797/ansible-role-lighthouse
+Vector	Сбор и пересылка логов	sapr797/ansible-role-vector
+🚀 Быстрый старт
+Клонирование репозитория
+bash
 # Клонировать с подмодулями
 git clone --recursive https://github.com/sapr797/ansible-lighthouse-monitoring.git
 
@@ -224,4 +218,3 @@ clickhouse-client --query "SELECT * FROM lighthouse_metrics.audits ORDER BY time
 
 📄 Лицензия
 MIT
-

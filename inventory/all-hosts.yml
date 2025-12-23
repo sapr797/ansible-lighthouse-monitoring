@@ -1,0 +1,17 @@
+all:
+  hosts:
+    lighthous:
+      ansible_host: lighthous
+      ansible_user: ubuntu
+    clickhous:
+      ansible_host: clickhous
+      ansible_user: ubuntu
+  
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    clickhouse_host: "clickhous"  # ClickHouse на отдельном хосте
+    clickhouse_port: 8123
+    clickhouse_user: "default"
+    clickhouse_password: ""
+    clickhouse_database: "default"
+    nginx_server_name: "lighthous"  # Lighthouse на этом хосте

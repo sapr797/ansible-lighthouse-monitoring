@@ -1,0 +1,60 @@
+---
+- name: 🚀 Deploy Monitoring Stack (Fixed)
+  hosts: localhost
+  connection: local
+  become: yes
+
+  vars:
+    # Отключаем установку Vector (он уже установлен)
+    install_vector: false
+    clickhouse_port: 8123
+    lighthouse_port: 8080
+
+  tasks:
+    # 1. Проверка ClickHouse
+    - name: Проверка работы ClickHouse
+      uri:
+        url: "http://127.0.0.1:{{ clickhouse_port }}/ping"
+        status_code: 200
+        timeout: 5
+      register: clickhouse_check
+      ignore_errors: yes
+
+    # 2. Пропускаем установку Vector (уже есть)
+    - name: Добавление GPG ключа Vector
+      apt_key:
+        url: "https://apt.datadoghq.com/DATADOG_APT_KEY_CURRENT.public"
+        state: present
+      when: false  # ПРОПУСТИТЬ - Vector уже установлен
+
+    - name: Добавление репозитория Vector
+      apt_repository:
+        repo: "deb https://packages.timber.io/vector/deb {{ ansible_distribution_release }} main"
+        state: present
+        filename: "vector"
+      when: false  # ПРОПУСТИТЬ
+
+    - name: Установка Vector
+      apt:
+        name: "vector={{ vector_version }}"
+        state: present
+      when: false  # ПРОПУСТИТЬ
+
+    # 3. Установка Lighthouse
+    - name: Установка Lighthouse
+      include_role:
+        name: lighthouse
+      tags: [lighthouse]
+
+    # 4. Проверка установки
+    - name: Проверка установки
+      debug:
+        msg: |
+          Установка завершена!
+          - ClickHouse: {{ '✓' if clickhouse_check.status == 200 else '✗' }}
+          - Vector: ✓ (установлен вручную, v0.52.0)
+          - Lighthouse: устанавливается через роль
+          
+          Проверьте:
+          - ClickHouse: http://localhost:8123
+          - Vector: vector --version

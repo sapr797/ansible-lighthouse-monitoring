@@ -1,0 +1,25 @@
+---
+- name: Ensure Vector config directory exists
+  file:
+    path: /etc/vector
+    state: directory
+    mode: '0755'
+
+- name: Deploy Vector configuration
+  template:
+    src: vector.yaml.j2
+    dest: /etc/vector/vector.yaml
+    mode: '0644'
+  notify: restart vector
+
+- name: Create log directory
+  file:
+    path: /var/log/lighthouse
+    state: directory
+    mode: '0755'
+
+- name: Create log file
+  file:
+    path: /var/log/lighthouse/audit.log
+    state: touch
+    mode: '0644'

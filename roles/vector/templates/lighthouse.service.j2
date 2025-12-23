@@ -1,0 +1,13 @@
+[Unit]
+Description=Lighthouse Web UI for ClickHouse
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/lighthouse
+ExecStart=/opt/lighthouse/lighthouse --config /opt/lighthouse/lighthouse.conf
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,32 @@
+---
+- name: Deploy Vector and Lighthouse monitoring stack
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Check if ClickHouse is running
+      uri:
+        url: "http://localhost:8123"
+        method: GET
+        status_code: 200
+      register: clickhouse_check
+      ignore_errors: yes
+      
+    - name: Fail if ClickHouse is not running
+      fail:
+        msg: "ClickHouse is not running on localhost:8123. Please install and start ClickHouse first with: sudo apt-get install -y clickhouse-server && sudo systemctl start clickhouse-server"
+      when: clickhouse_check.failed
+    
+  roles:
+    - vector
+    - lighthouse
+    
+  post_tasks:
+    - name: Display deployment information
+      debug:
+        msg:
+          - "✅ Vector installed and configured"
+          - "✅ Lighthouse web UI available at http://{{ ansible_host }}"
+          - "📊 ClickHouse: http://{{ ansible_host }}:8123"
+          - "📈 Vector collecting logs from /var/log/clickhouse-server/"

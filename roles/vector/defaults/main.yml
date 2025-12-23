@@ -1,0 +1,6 @@
+---
+vector_version: "0.35.0"
+clickhouse_host: "localhost"
+clickhouse_port: 8123
+clickhouse_database: "default"
+clickhouse_metrics_table: "metric_log"

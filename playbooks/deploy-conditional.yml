@@ -1,0 +1,109 @@
+---
+- name: 🎯 Условное развёртывание компонентов
+  hosts: localhost
+  connection: local
+  become: yes
+
+  vars:
+    deploy_clickhouse: true
+    deploy_vector: true  
+    deploy_lighthouse: true
+    deploy_web: true
+
+    clickhouse_port: 8123
+    lighthouse_port: 8080
+
+  tasks:
+    - name: 📋 Отображение плана развёртывания
+      debug:
+        msg: |
+          План развёртывания:
+          - ClickHouse: {{ deploy_clickhouse }}
+          - Vector: {{ deploy_vector }}
+          - Lighthouse: {{ deploy_lighthouse }}
+          - Веб-интерфейс: {{ deploy_web }}
+      tags: always
+
+  roles:
+    - role: clickhouse
+      when: deploy_clickhouse
+      tags: [clickhouse]
+
+  tasks:
+    - name: ⏳ Ожидание ClickHouse (если нужен Vector/Lighthouse)
+      wait_for:
+        host: "127.0.0.1"
+        port: "{{ clickhouse_port }}"
+        timeout: 30
+      when: deploy_clickhouse and (deploy_vector or deploy_lighthouse)
+      tags: [dependencies]
+
+  roles:
+    - role: vector
+      when: deploy_vector and deploy_clickhouse
+      tags: [vector]
+
+  tasks:
+    - name: 🗃️ Подготовка БД для Lighthouse
+      uri:
+        url: "http://127.0.0.1:{{ clickhouse_port }}/"
+        method: POST
+        body: "CREATE DATABASE IF NOT EXISTS lighthouse_metrics"
+        status_code: 200
+      when: deploy_lighthouse and deploy_clickhouse
+      tags: [database]
+
+  roles:
+    - role: lighthouse
+      when: deploy_lighthouse and deploy_clickhouse
+      tags: [lighthouse]
+
+  tasks:
+    - name: 🌐 Настройка веб-интерфейса
+      block:
+        - name: Установка nginx
+          apt:
+            name: nginx
+            state: present
+          when: deploy_web
+
+        - name: Базовая конфигурация
+          copy:
+            dest: /etc/nginx/sites-available/lighthouse
+            content: |
+              server {
+                  listen 80;
+                  server_name _;
+                  location / {
+                      proxy_pass http://127.0.0.1:{{ lighthouse_port }};
+                  }
+              }
+          when: deploy_web and deploy_lighthouse
+
+        - name: Активация и перезапуск
+          block:
+            - file:
+                src: /etc/nginx/sites-available/lighthouse
+                dest: /etc/nginx/sites-enabled/lighthouse
+                state: link
+            - systemd:
+                name: nginx
+                state: restarted
+          when: deploy_web and deploy_lighthouse
+      tags: [web]
+
+  post_tasks:
+    - name: 📊 Итоговый отчёт
+      debug:
+        msg: |
+          Развёртывание завершено. Компоненты:
+          {{ '- ClickHouse: ✓' if deploy_clickhouse else '- ClickHouse: ✗ (пропущен)' }}
+          {{ '- Vector: ✓' if deploy_vector and deploy_clickhouse else '- Vector: ✗' }}
+          {{ '- Lighthouse: ✓' if deploy_lighthouse and deploy_clickhouse else '- Lighthouse: ✗' }}
+          {{ '- Веб-интерфейс: ✓' if deploy_web and deploy_lighthouse else '- Веб-интерфейс: ✗' }}
+          
+          Доступные endpoints:
+          {{ '- ClickHouse: http://localhost:8123' if deploy_clickhouse else '' }}
+          {{ '- Lighthouse: http://localhost:8080' if deploy_lighthouse else '' }}
+          {{ '- Веб-прокси: http://localhost/' if deploy_web and deploy_lighthouse else '' }}
+      tags: [report]

@@ -1,0 +1,16 @@
+sources:
+  lighthouse_logs:
+    type: file
+    include: ["/var/log/lighthouse/audit.log"]
+    ignore_older_secs: 600
+    read_from: "beginning"
+
+sinks:
+  clickhouse_sink:
+    type: clickhouse
+    inputs: ["lighthouse_logs"]
+    endpoint: "http://{{ clickhouse_host | default('127.0.0.1') }}:{{ clickhouse_port | default('8123') }}"
+    database: "{{ clickhouse_database | default('lighthouse_metrics') }}"
+    table: "{{ clickhouse_table | default('audits') }}"
+    skip_unknown_fields: true
+    format: "json_each_row"

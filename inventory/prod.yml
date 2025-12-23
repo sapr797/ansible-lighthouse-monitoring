@@ -1,0 +1,32 @@
+all:
+  hosts:
+    clickhouse-server:
+      ansible_host: localhost
+      ansible_connection: local
+    vector-server:
+      ansible_host: localhost  
+      ansible_connection: local
+    lighthouse-server:
+      ansible_host: localhost
+      ansible_connection: local
+  
+  children:
+    clickhouse_servers:
+      hosts:
+        clickhouse-server:
+    vector_servers:
+      hosts:
+        vector-server:
+    lighthouse_servers:
+      hosts:
+        lighthouse-server:
+    
+  vars:
+    ansible_user: ubuntu
+    ansible_python_interpreter: /usr/bin/python3
+    clickhouse_host: "localhost"
+    clickhouse_port: 8123
+    clickhouse_user: "default"
+    clickhouse_password: ""
+    clickhouse_database: "default"
+    nginx_server_name: "localhost"

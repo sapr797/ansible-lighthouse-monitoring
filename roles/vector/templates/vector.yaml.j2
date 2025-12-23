@@ -1,0 +1,18 @@
+sources:
+  clickhouse_logs:
+    type: file
+    include:
+      - /var/log/clickhouse-server/clickhouse-server.log
+      - /var/log/clickhouse-server/clickhouse-server.err.log
+    read_from: beginning
+
+sinks:
+  clickhouse_sink:
+    type: clickhouse
+    inputs:
+      - clickhouse_logs
+    endpoint: http://{{ clickhouse_host | default('localhost') }}:{{ clickhouse_port | default(8123) }}
+    database: {{ clickhouse_database | default('default') }}
+    table: {{ clickhouse_metrics_table | default('metric_log') }}
+    skip_unknown_fields: true
+    compression: gzip

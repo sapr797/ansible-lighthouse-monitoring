@@ -1,0 +1,38 @@
+---
+- name: Deploy monitoring stack
+  hosts: localhost
+  connection: local
+  become: yes
+  
+  vars:
+    clickhouse_version: "24.3"
+    vector_version: "0.35.0"
+    lighthouse_version: "4.5.0"
+    clickhouse_host: "localhost"
+    clickhouse_port: 8123
+    clickhouse_user: "default"
+    clickhouse_password: ""
+    clickhouse_database: "default"
+    nginx_server_name: "localhost"
+    lighthouse_port: 8080
+  
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+  
+  roles:
+    - role: vector
+      when: "'vector' in group_names or 'all' in group_names"
+    
+    - role: lighthouse
+      when: "'lighthouse' in group_names or 'all' in group_names"
+  
+  post_tasks:
+    - name: Display deployment status
+      debug:
+        msg:
+          - "✅ Vector: Installed and configured"
+          - "✅ Lighthouse: Available at http://{{ nginx_server_name }}"
+          - "📊 ClickHouse: Available at http://{{ clickhouse_host }}:{{ clickhouse_port }}"

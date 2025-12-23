@@ -1,0 +1,55 @@
+---
+- name: Install required packages
+  apt:
+    name:
+      - curl
+      - wget
+      - tar
+      - gzip
+    state: present
+    update_cache: yes
+
+- name: Download Vector binary
+  get_url:
+    url: "https://packages.timber.io/vector/{{ vector_version }}/vector-{{ vector_version }}-x86_64-unknown-linux-gnu.tar.gz"
+    dest: "/tmp/vector-{{ vector_version }}.tar.gz"
+    timeout: 60
+
+- name: Create Vector directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - /opt/vector
+    - /etc/vector
+
+- name: Extract Vector archive
+  unarchive:
+    src: "/tmp/vector-{{ vector_version }}.tar.gz"
+    dest: "/opt/vector"
+    remote_src: yes
+    creates: "/opt/vector/vector-{{ vector_version }}/bin/vector"
+
+- name: Create symlink to Vector binary
+  file:
+    src: "/opt/vector/vector-{{ vector_version }}/bin/vector"
+    dest: "/usr/local/bin/vector"
+    state: link
+
+- name: Configure Vector
+  template:
+    src: vector.yaml.j2
+    dest: /etc/vector/vector.yaml
+  notify: restart vector
+
+- name: Create systemd service for Vector
+  template:
+    src: vector.service.j2
+    dest: /etc/systemd/system/vector.service
+
+- name: Enable and start Vector service
+  systemd:
+    name: vector
+    state: started
+    enabled: yes
+    daemon_reload: yes
